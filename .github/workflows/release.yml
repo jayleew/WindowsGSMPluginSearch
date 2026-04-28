@@ -114,17 +114,17 @@ jobs:
           $startMarker = "<!-- WINDOWS_GSM_PLUGIN_SEARCH_POLICY_START -->"
           $endMarker = "<!-- WINDOWS_GSM_PLUGIN_SEARCH_POLICY_END -->"
 
-          $managedBody = @"
-$startMarker
-## Code signing policy
-
-Free code signing provided by SignPath.io, certificate by SignPath Foundation.
-
-This release was built from the tagged source code by GitHub Actions. The signed executable is included in WindowsGsmPluginSearch-win-x64.zip, and SHA256SUMS.txt contains the SHA-256 checksum for the release ZIP.
-
-This app requests no GitHub OAuth scopes. GitHub authentication is used only for API rate limits, and tokens are kept in memory only while the app is running.
-$endMarker
-"@
+          $managedBody = @(
+            $startMarker
+            "## Code signing policy"
+            ""
+            "Free code signing provided by SignPath.io, certificate by SignPath Foundation."
+            ""
+            "This release was built from the tagged source code by GitHub Actions. The signed executable is included in WindowsGsmPluginSearch-win-x64.zip, and SHA256SUMS.txt contains the SHA-256 checksum for the release ZIP."
+            ""
+            "This app requests no GitHub OAuth scopes. GitHub authentication is used only for API rate limits, and tokens are kept in memory only while the app is running."
+            $endMarker
+          ) -join "`n"
 
           $existingBody = ""
           try {
