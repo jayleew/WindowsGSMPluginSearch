@@ -107,14 +107,11 @@ jobs:
 
       - name: Create release body
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          $tag = "${{ steps.version.outputs.tag }}"
           $startMarker = "<!-- WINDOWS_GSM_PLUGIN_SEARCH_POLICY_START -->"
           $endMarker = "<!-- WINDOWS_GSM_PLUGIN_SEARCH_POLICY_END -->"
 
-          $managedBody = @(
+          $releaseBody = @(
             $startMarker
             "## Code signing policy"
             ""
@@ -125,25 +122,6 @@ jobs:
             "This app requests no GitHub OAuth scopes. GitHub authentication is used only for API rate limits, and tokens are kept in memory only while the app is running."
             $endMarker
           ) -join "`n"
-
-          $existingBody = ""
-          try {
-            $existingBody = gh release view $tag --json body --jq .body 2>$null
-          }
-          catch {
-            $existingBody = ""
-          }
-
-          if ([string]::IsNullOrWhiteSpace($existingBody)) {
-            $releaseBody = $managedBody
-          }
-          elseif ($existingBody.Contains($startMarker) -and $existingBody.Contains($endMarker)) {
-            $pattern = "(?s)$([regex]::Escape($startMarker)).*?$([regex]::Escape($endMarker))"
-            $releaseBody = [regex]::Replace($existingBody, $pattern, $managedBody)
-          }
-          else {
-            $releaseBody = "$existingBody`n`n$managedBody"
-          }
 
           $releaseBody | Out-File release-body.md -Encoding utf8
 
