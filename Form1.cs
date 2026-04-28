@@ -8,7 +8,7 @@ namespace WindowsGsmPluginSearch;
 
 public partial class Form1 : Form
 {
-    private const string GitHubClientId = "";
+    private const string GitHubClientId = "Ov23liEwnQLo0CM17TBy";
     private const string DeviceFlowGrantType = "urn:ietf:params:oauth:grant-type:device_code";
 
     private static readonly HttpClient HttpClient = CreateHttpClient();

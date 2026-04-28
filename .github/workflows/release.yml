@@ -25,7 +25,16 @@ jobs:
         run: dotnet restore
 
       - name: Publish
-        run: dotnet publish -c Release -r win-x64 --self-contained false -p:PublishSingleFile=true -o publish
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          dotnet publish -c Release -r win-x64 --self-contained false `
+            -p:PublishSingleFile=true `
+            -p:Version=$version `
+            -p:AssemblyVersion="$version.0" `
+            -p:FileVersion="$version.0" `
+            -p:InformationalVersion="${{ github.ref_name }}" `
+            -o publish
 
       - name: Zip app
         shell: pwsh
