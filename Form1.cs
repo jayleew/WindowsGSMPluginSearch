@@ -70,6 +70,7 @@ public partial class Form1 : Form
         searchButton.Text = "Search";
         searchButton.Dock = DockStyle.Fill;
         searchButton.Click += SearchButton_Click;
+        searchButton.Enabled = HasGitHubToken();
 
         signInButton.Text = "Sign in with GitHub";
         signInButton.Dock = DockStyle.Fill;
@@ -94,7 +95,9 @@ public partial class Form1 : Form
         statusLabel.Dock = DockStyle.Bottom;
         statusLabel.Height = 28;
         statusLabel.Padding = new Padding(12, 5, 12, 0);
-        statusLabel.Text = "Enter a search term and click Search.";
+        statusLabel.Text = HasGitHubToken()
+            ? "Enter a search term and click Search."
+            : "Sign in with GitHub to enable search.";
 
         Controls.Add(resultsListView);
         Controls.Add(statusLabel);
@@ -124,6 +127,12 @@ public partial class Form1 : Form
 
     private async Task SearchAsync()
     {
+        if (!HasGitHubToken())
+        {
+            MessageBox.Show("Sign in with GitHub before searching.", "Sign-in required", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return;
+        }
+
         var searchTerm = searchTextBox.Text.Trim();
         if (string.IsNullOrWhiteSpace(searchTerm))
         {
@@ -182,11 +191,16 @@ public partial class Form1 : Form
 
     private void SetSearchingState(bool isSearching)
     {
-        searchButton.Enabled = !isSearching;
+        searchButton.Enabled = !isSearching && HasGitHubToken();
         searchTextBox.Enabled = !isSearching;
         signInButton.Enabled = !isSearching;
         statusLabel.Text = isSearching ? "Searching GitHub..." : statusLabel.Text;
         Cursor = isSearching ? Cursors.WaitCursor : Cursors.Default;
+    }
+
+    private static bool HasGitHubToken()
+    {
+        return HttpClient.DefaultRequestHeaders.Authorization is not null;
     }
 
     private async Task SignInWithGitHubAsync()
@@ -213,11 +227,7 @@ public partial class Form1 : Form
                 UseShellExecute = true
             });
 
-            MessageBox.Show(
-                $"Enter this code in the browser:\n\n{deviceCode.UserCode}",
-                "GitHub sign in",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Information);
+            ShowDeviceCodeDialog(deviceCode.UserCode);
 
             statusLabel.Text = "Waiting for GitHub authorization...";
 
@@ -248,10 +258,71 @@ public partial class Form1 : Form
     private void SetSignInState(bool isSigningIn, string status)
     {
         signInButton.Enabled = !isSigningIn;
-        searchButton.Enabled = !isSigningIn;
+        searchButton.Enabled = !isSigningIn && HasGitHubToken();
         searchTextBox.Enabled = !isSigningIn;
         statusLabel.Text = status;
         Cursor = isSigningIn ? Cursors.WaitCursor : Cursors.Default;
+    }
+
+    private void ShowDeviceCodeDialog(string userCode)
+    {
+        using var dialog = new Form
+        {
+            Text = "GitHub sign in",
+            StartPosition = FormStartPosition.CenterParent,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MaximizeBox = false,
+            MinimizeBox = false,
+            ClientSize = new Size(360, 170)
+        };
+
+        var instructionLabel = new Label
+        {
+            AutoSize = false,
+            Text = "Enter this code in the browser:",
+            TextAlign = ContentAlignment.MiddleLeft,
+            Location = new Point(16, 16),
+            Size = new Size(328, 24)
+        };
+
+        var codeTextBox = new TextBox
+        {
+            ReadOnly = true,
+            Text = userCode,
+            TextAlign = HorizontalAlignment.Center,
+            Font = new Font(Font.FontFamily, 16, FontStyle.Bold),
+            Location = new Point(16, 48),
+            Size = new Size(328, 34)
+        };
+
+        var copyButton = new Button
+        {
+            Text = "Copy code",
+            Location = new Point(132, 116),
+            Size = new Size(100, 32)
+        };
+        copyButton.Click += (_, _) =>
+        {
+            Clipboard.SetText(userCode);
+            copyButton.Text = "Copied";
+        };
+
+        var closeButton = new Button
+        {
+            Text = "OK",
+            DialogResult = DialogResult.OK,
+            Location = new Point(244, 116),
+            Size = new Size(100, 32)
+        };
+
+        dialog.Controls.Add(instructionLabel);
+        dialog.Controls.Add(codeTextBox);
+        dialog.Controls.Add(copyButton);
+        dialog.Controls.Add(closeButton);
+        dialog.AcceptButton = closeButton;
+        dialog.CancelButton = closeButton;
+
+        dialog.ShowDialog(this);
     }
 
     private static async Task<GitHubDeviceCodeResponse> RequestDeviceCodeAsync()
@@ -325,9 +396,9 @@ public partial class Form1 : Form
         if (response.StatusCode == HttpStatusCode.Forbidden &&
             error?.Message.Contains("rate limit", StringComparison.OrdinalIgnoreCase) == true)
         {
-            statusLabel.Text = "GitHub API rate limit exceeded. Set GITHUB_TOKEN or GH_TOKEN, then restart the app.";
+            statusLabel.Text = "GitHub API rate limit exceeded. Sign in with GitHub and try again.";
             MessageBox.Show(
-                "GitHub has rate-limited unauthenticated API requests. Create a GitHub personal access token, set it as the GITHUB_TOKEN environment variable, and restart this app.",
+                "GitHub has rate-limited this request. Sign in with GitHub and try again.",
                 "GitHub rate limit exceeded",
                 MessageBoxButtons.OK,
                 MessageBoxIcon.Warning);

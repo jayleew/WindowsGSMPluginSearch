@@ -1,6 +1,15 @@
 name: Build Release
 
 on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to build, for example v1.0.0"
+        required: true
+        default: "v1.0.0"
+  release:
+    types:
+      - published
   push:
     tags:
       - "v*.*.*"
@@ -24,16 +33,33 @@ jobs:
       - name: Restore
         run: dotnet restore
 
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        run: |
+          $tag = "${{ github.ref_name }}"
+
+          if ("${{ github.event_name }}" -eq "release") {
+            $tag = "${{ github.event.release.tag_name }}"
+          }
+
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            $tag = "${{ github.event.inputs.tag }}"
+          }
+
+          $version = $tag.TrimStart("v")
+          "tag=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Publish
         shell: pwsh
         run: |
-          $version = "${{ github.ref_name }}".TrimStart("v")
           dotnet publish -c Release -r win-x64 --self-contained false `
             -p:PublishSingleFile=true `
-            -p:Version=$version `
-            -p:AssemblyVersion="$version.0" `
-            -p:FileVersion="$version.0" `
-            -p:InformationalVersion="${{ github.ref_name }}" `
+            -p:Version=${{ steps.version.outputs.version }} `
+            -p:AssemblyVersion="${{ steps.version.outputs.version }}.0" `
+            -p:FileVersion="${{ steps.version.outputs.version }}.0" `
+            -p:InformationalVersion=${{ steps.version.outputs.tag }} `
             -o publish
 
       - name: Zip app
@@ -46,9 +72,10 @@ jobs:
           $hash = Get-FileHash WindowsGsmPluginSearch-win-x64.zip -Algorithm SHA256
           "$($hash.Hash)  WindowsGsmPluginSearch-win-x64.zip" | Out-File SHA256SUMS.txt -Encoding ascii
 
-      - name: Create GitHub Release
+      - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.tag }}
           files: |
             WindowsGsmPluginSearch-win-x64.zip
             SHA256SUMS.txt
