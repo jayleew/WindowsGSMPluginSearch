@@ -62,6 +62,39 @@ jobs:
             -p:InformationalVersion=${{ steps.version.outputs.tag }} `
             -o publish
 
+      - name: Sign executable
+        shell: pwsh
+        env:
+          WINDOWS_CODESIGN_PFX_BASE64: ${{ secrets.WINDOWS_CODESIGN_PFX_BASE64 }}
+          WINDOWS_CODESIGN_PASSWORD: ${{ secrets.WINDOWS_CODESIGN_PASSWORD }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:WINDOWS_CODESIGN_PFX_BASE64)) {
+            Write-Host "WINDOWS_CODESIGN_PFX_BASE64 is not set. Skipping code signing."
+            exit 0
+          }
+
+          $certificatePath = Join-Path $env:RUNNER_TEMP "codesign.pfx"
+          [IO.File]::WriteAllBytes($certificatePath, [Convert]::FromBase64String($env:WINDOWS_CODESIGN_PFX_BASE64))
+
+          $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin" -Recurse -Filter signtool.exe |
+            Where-Object { $_.FullName -match "\\x64\\signtool.exe$" } |
+            Sort-Object FullName -Descending |
+            Select-Object -First 1
+
+          if ($null -eq $signtool) {
+            throw "signtool.exe was not found on the runner."
+          }
+
+          & $signtool.FullName sign `
+            /f $certificatePath `
+            /p $env:WINDOWS_CODESIGN_PASSWORD `
+            /fd SHA256 `
+            /tr http://timestamp.digicert.com `
+            /td SHA256 `
+            publish\WindowsGsmPluginSearch.exe
+
+          Remove-Item $certificatePath -Force
+
       - name: Zip app
         shell: pwsh
         run: Compress-Archive -Path publish/* -DestinationPath WindowsGsmPluginSearch-win-x64.zip
@@ -72,10 +105,53 @@ jobs:
           $hash = Get-FileHash WindowsGsmPluginSearch-win-x64.zip -Algorithm SHA256
           "$($hash.Hash)  WindowsGsmPluginSearch-win-x64.zip" | Out-File SHA256SUMS.txt -Encoding ascii
 
+      - name: Create release body
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $tag = "${{ steps.version.outputs.tag }}"
+          $startMarker = "<!-- WINDOWS_GSM_PLUGIN_SEARCH_POLICY_START -->"
+          $endMarker = "<!-- WINDOWS_GSM_PLUGIN_SEARCH_POLICY_END -->"
+
+          $managedBody = @"
+$startMarker
+## Code signing policy
+
+Free code signing provided by SignPath.io, certificate by SignPath Foundation.
+
+This release was built from the tagged source code by GitHub Actions. The signed executable is included in WindowsGsmPluginSearch-win-x64.zip, and SHA256SUMS.txt contains the SHA-256 checksum for the release ZIP.
+
+This app requests no GitHub OAuth scopes. GitHub authentication is used only for API rate limits, and tokens are kept in memory only while the app is running.
+$endMarker
+"@
+
+          $existingBody = ""
+          try {
+            $existingBody = gh release view $tag --json body --jq .body 2>$null
+          }
+          catch {
+            $existingBody = ""
+          }
+
+          if ([string]::IsNullOrWhiteSpace($existingBody)) {
+            $releaseBody = $managedBody
+          }
+          elseif ($existingBody.Contains($startMarker) -and $existingBody.Contains($endMarker)) {
+            $pattern = "(?s)$([regex]::Escape($startMarker)).*?$([regex]::Escape($endMarker))"
+            $releaseBody = [regex]::Replace($existingBody, $pattern, $managedBody)
+          }
+          else {
+            $releaseBody = "$existingBody`n`n$managedBody"
+          }
+
+          $releaseBody | Out-File release-body.md -Encoding utf8
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ steps.version.outputs.tag }}
+          body_path: release-body.md
           files: |
             WindowsGsmPluginSearch-win-x64.zip
             SHA256SUMS.txt
